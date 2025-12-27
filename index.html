@@ -10,6 +10,10 @@
     <!-- Markdown Parser -->
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
     
+    <!-- 🔥 FIREBASE SDK (REQUIRED FOR MONITORING) 🔥 -->
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-firestore-compat.js"></script>
+
     <style>
         /* =========================================
            🎨 THEME & DESIGN VARIABLES (ULTIMATE DARK)
@@ -178,6 +182,7 @@
             border: 1px solid var(--primary-color); width: 85%; max-width: 350px; 
             text-align: center; box-shadow: 0 0 50px rgba(0, 255, 255, 0.15); 
             animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            max-height: 80vh; overflow-y: auto; /* Added for log scrolling */
         }
         @keyframes popIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
         .modal-title { color: var(--primary-color); font-size: 18px; font-weight: bold; margin-bottom: 10px; letter-spacing: 1px; }
@@ -202,6 +207,12 @@
         .modal-btn.secondary { background: #222; color: #fff; border: 1px solid #444; }
         .modal-btn.secondary:hover { background: #333; }
         .modal-btn.danger { background: #ff4444; color: white; }
+
+        /* 🔥 LOG MONITOR STYLES (ADDED) 🔥 */
+        .log-entry { text-align: left; background: #111; padding: 10px; margin-bottom: 5px; border-radius: 5px; border-left: 2px solid #555; font-size: 12px; }
+        .log-user { color: var(--primary-color); font-weight: bold; }
+        .log-msg { color: #fff; margin-top: 2px; }
+        .log-time { color: #666; font-size: 10px; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -238,6 +249,8 @@
             <p class="modal-text" id="imText">Message goes here...</p>
             <input type="text" id="imInput" class="modal-input" style="display:none;">
             <div class="btn-group" id="imButtons"></div>
+            <!-- 🔥 LOG CONTAINER (ADDED) 🔥 -->
+            <div id="adminLogContainer" style="display:none; text-align: left; max-height: 300px; overflow-y: auto; margin-top:15px;"></div>
         </div>
     </div>
 
@@ -296,6 +309,33 @@
 
     <!-- LOGIC SCRIPT -->
     <script>
+        // ============================================
+        //   🔥 FIREBASE CONFIGURATION (ADMIN MONITOR)
+        // ============================================
+        
+        // 🔴🔴🔴 IMPORTANT: PASTE YOUR COPIED CONFIG BELOW 🔴🔴🔴
+        // এই নিচের const firebaseConfig এর পুরো অংশটি মুছে আপনার কপি করা কোড বসান।
+        
+        const firebaseConfig = {
+  apiKey: "AIzaSyDZi7IKDVHALYik4OJAXLzA2a02mwEk-7s",
+  authDomain: "salman-ai-27e52.firebaseapp.com",
+  projectId: "salman-ai-27e52",
+  storageBucket: "salman-ai-27e52.firebasestorage.app",
+  messagingSenderId: "142221298196",
+  appId: "1:142221298196:web:806b6a46e8a860f2ffb501",
+  measurementId: "G-QTXFGV7E8S"
+}; // <--- এই সেমিকোলনটি যেন থাকে
+
+        // Initialize Firebase
+        let db;
+        try {
+            firebase.initializeApp(firebaseConfig);
+            db = firebase.firestore();
+            console.log("Database Connected");
+        } catch (e) {
+            console.error("Firebase not configured", e);
+        }
+
         // ============================================
         //   🔑 CORE CONFIGURATION & MULTI-KEY LOGIC
         // ============================================
@@ -429,6 +469,8 @@
                 let mText = document.getElementById("imText");
                 let mInput = document.getElementById("imInput");
                 let mBtns = document.getElementById("imButtons");
+                // Hide log container by default when showing generic modal
+                document.getElementById("adminLogContainer").style.display = "none";
 
                 mTitle.innerText = title;
                 mText.innerHTML = text; 
@@ -512,17 +554,28 @@
             document.getElementById("imTitle").innerText = "SETTINGS";
             document.getElementById("imText").innerText = "Select an action:";
             document.getElementById("imInput").style.display = "none";
+            document.getElementById("adminLogContainer").style.display = "none";
             let btns = document.getElementById("imButtons");
             btns.innerHTML = "";
 
+            // 🔥 ADMIN MONITOR BUTTON (ADDED)
+            if (IS_CREATOR) {
+                let btnMonitor = document.createElement("button");
+                btnMonitor.className = "modal-btn";
+                btnMonitor.style.background = "#ff9900";
+                btnMonitor.innerHTML = "<i class='fas fa-eye'></i> Monitor Users";
+                btnMonitor.onclick = openAdminMonitor;
+                btns.appendChild(btnMonitor);
+            }
+
             let btn1 = document.createElement("button");
             btn1.className = "modal-btn secondary";
-            btn1.innerHTML = "<i class='fas fa-sign-out-alt'></i> Logout Name";
+            btn1.innerHTML = "<i class='fas fa-sign-out-alt'></i> Logout";
             btn1.onclick = () => { localStorage.removeItem("salman_username"); location.reload(); };
 
             let btn2 = document.createElement("button");
             btn2.className = "modal-btn";
-            btn2.innerHTML = "<i class='fas fa-key'></i> Change/Add Keys";
+            btn2.innerHTML = "<i class='fas fa-key'></i> Keys";
             btn2.onclick = () => { localStorage.removeItem("salman_api_keys"); location.reload(); };
             
             let btn3 = document.createElement("button");
@@ -535,6 +588,50 @@
             btns.appendChild(btn2);
             btns.appendChild(btn3);
             modal.style.display = "flex";
+        }
+
+        // 🔥 ADMIN MONITOR FUNCTION (UPDATED - FULL VIEW)
+        function openAdminMonitor() {
+            let container = document.getElementById("adminLogContainer");
+            let text = document.getElementById("imText");
+            let title = document.getElementById("imTitle");
+            let btns = document.getElementById("imButtons");
+
+            title.innerText = "LIVE USER MONITORING";
+            text.innerText = "Fetching latest chats from database...";
+            btns.innerHTML = '<button class="modal-btn danger" onclick="document.getElementById(\'interactiveModal\').style.display=\'none\'">CLOSE MONITOR</button>';
+            container.style.display = "block";
+            container.innerHTML = "Loading...";
+
+            if(!db) {
+                container.innerHTML = "<span style='color:red'>Database not connected! Check Config.</span>";
+                return;
+            }
+
+            // Fetch last 20 messages
+            db.collection("chats").orderBy("timestamp", "desc").limit(20).get().then((querySnapshot) => {
+                container.innerHTML = "";
+                if(querySnapshot.empty) {
+                    container.innerHTML = "No chats found.";
+                    return;
+                }
+                querySnapshot.forEach((doc) => {
+                    let d = doc.data();
+                    let date = d.timestamp ? new Date(d.timestamp.toDate()).toLocaleString() : "N/A";
+                    let div = document.createElement("div");
+                    div.className = "log-entry";
+                    div.innerHTML = `
+                        <div class="log-user">${d.user} <span style="font-weight:normal; color:#888;">(${d.role})</span></div>
+                        <div class="log-msg">User: ${d.message}</div>
+                        <!-- 🔥 FULL MESSAGE VIEW ENABLED 🔥 -->
+                        <div class="log-msg" style="color:#00ffff; font-style:italic;">AI: ${d.bot_reply ? d.bot_reply : "..."}</div>
+                        <div class="log-time">${date}</div>
+                    `;
+                    container.appendChild(div);
+                });
+            }).catch(error => {
+                container.innerHTML = "Error fetching logs: " + error.message;
+            });
         }
 
         // ============================================
@@ -606,6 +703,18 @@
                 // Try fetch with retry logic (Multi-Key Support)
                 let reply = await fetchWithRetry(ACTIVE_MODEL, payloadWithSearch, payloadWithoutSearch);
                 displayReply(aiMsgDiv, reply);
+
+                // 🔥 SEND TO DATABASE (MONITORING) 🔥
+                if(db) {
+                    db.collection("chats").add({
+                        user: USER_NAME,
+                        role: IS_CREATOR ? "Admin" : "Guest",
+                        message: text,
+                        bot_reply: reply,
+                        timestamp: firebase.firestore.FieldValue.serverTimestamp()
+                    });
+                }
+
             } catch (e) {
                 aiMsgDiv.innerHTML = `<span style="color:#ff5555">⚠ Connection Failed. All Neural Tokens exhausted. Please update settings.</span>`;
             }
